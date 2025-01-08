@@ -1,0 +1,80 @@
+package com.redomar.game.net;
+
+import com.redomar.game.Game;
+import com.redomar.game.entities.PlayerMP;
+import com.redomar.game.net.packets.Packet;
+import com.redomar.game.net.packets.Packet.PacketTypes;
+import com.redomar.game.net.packets.Packet00Login;
+import com.redomar.game.net.packets.Packet01Disconnect;
+import com.redomar.game.net.packets.Packet02Move;
+import com.redomar.game.log.PrintTypes;
+import com.redomar.game.log.Printer;
+
+import java.io.IOException;
+import java.net.*;
+
+@Deprecated
+public class GameClient extends Thread {
+
+	private final Printer print = new Printer();
+	private InetAddress ipAddress;
+	private DatagramSocket socket;
+	private Game game;
+
+	public GameClient(Game game, String ipAddress) {
+		this.setGame(game);
+		try {
+			this.socket = new DatagramSocket();
+			this.ipAddress = InetAddress.getByName(ipAddress);
+		} catch (SocketException | UnknownHostException e) {
+			e.printStackTrace();
+		}
+	}
+
+	private void parsePacket(byte[] data, InetAddress address, int port) {
+		String message = new String(data).trim();
+		PacketTypes type = Packet.lookupPacket(message.substring(0, 2));
+		Packet packet;
+		switch (type) {
+			default:
+			case INVALID:
+				break;
+			case LOGIN:
+				packet = new Packet00Login(data);
+				handleLogin((Packet00Login) packet, address, port);
+				break;
+			case DISCONNECT:
+				packet = new Packet01Disconnect(data);
+				print.print("[" + address.getHostAddress() + ":" + port + "] " + ((Packet01Disconnect) packet).getUsername() + " has disconnected...", PrintTypes.NETWORK);
+				Game.getLevel().removeEntity(((Packet01Disconnect) packet).getUsername());
+				break;
+			case MOVE:
+				packet = new Packet02Move(data);
+				break;
+		}
+	}
+
+	private void handleLogin(Packet00Login packet, InetAddress address, int port) {
+		print.print("[" + address.getHostAddress() + ":" + port + "] " + packet.getUsername() + " has joined...", PrintTypes.NETWORK);
+		PlayerMP player = new PlayerMP(Game.getLevel(), packet.getX(), packet.getY(), packet.getUsername(), address, port, Game.getShirtCol(), Game.getFaceCol());
+		Game.getLevel().addEntity(player);
+	}
+
+	public void sendData(byte[] data) {
+		DatagramPacket packet = new DatagramPacket(data, data.length, ipAddress, 1331);
+		try {
+			socket.send(packet);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+
+	public Game getGame() {
+		return game;
+	}
+
+	public void setGame(Game game) {
+		this.game = game;
+	}
+
+}
